@@ -187,7 +187,7 @@ export function GoogleCanvasMap({
         strokeOpacity: 0.9,
         strokeWeight: 5,
       });
-      polylineRef.current.setMap(map);
+      polylineRef.current?.setMap(map);
     }
 
     const points = [...stableMarkers.map((marker) => marker.position), ...stablePath];

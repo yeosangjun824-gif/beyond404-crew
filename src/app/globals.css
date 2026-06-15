@@ -6,26 +6,37 @@
 
 :root {
   color: #111827;
-  background: #202124;
+  background: #eef2f7;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
   min-height: 100vh;
-  background: #202124;
+  background: #eef2f7;
+  color: #111827;
   font-family:
-    Arial,
-    Helvetica,
+    "Pretendard Variable",
+    "Pretendard",
+    "Apple SD Gothic Neo",
+    "Noto Sans KR",
+    "Malgun Gothic",
     sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -59,7 +70,7 @@ select {
 .swapit-map-marker--crew {
   width: 22px;
   height: 22px;
-  background: #dc2626;
+  background: #b6144b;
 }
 
 .swapit-map-marker--hub {

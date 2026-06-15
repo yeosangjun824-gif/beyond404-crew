@@ -12,10 +12,10 @@ import {
   updateCrewLocation,
   type CrewCall,
 } from "@/lib/crew-api";
-import { ArrowLeft, Home, MapPin, Navigation, Truck, Warehouse } from "lucide-react";
+import { ArrowLeft, Home, MapPin, Navigation, Timer, Truck, Warehouse } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 type Coordinates = {
   lat: number;
@@ -92,9 +92,7 @@ export default function CrewActiveCallPage() {
   const locationTrackingEnabled = ["ASSIGNED", "IN_PROGRESS", "ARRIVED"].includes(status);
 
   useEffect(() => {
-    if (!locationTrackingEnabled) {
-      return undefined;
-    }
+    if (!locationTrackingEnabled) return undefined;
 
     let stopped = false;
     let fallbackCleanup: (() => void) | undefined;
@@ -151,9 +149,7 @@ export default function CrewActiveCallPage() {
       const watchId = navigator.geolocation.watchPosition(
         (position) => {
           const now = Date.now();
-          if (now - lastSentAt < 3000) {
-            return;
-          }
+          if (now - lastSentAt < 3000) return;
           lastSentAt = now;
 
           void sendLocation({
@@ -247,26 +243,38 @@ export default function CrewActiveCallPage() {
     ...(crewLocation ? [{ key: "crew", label: "C", position: crewLocation, variant: "crew" as const }] : []),
     ...(hubLocation ? [{ key: "hub", label: "H", position: hubLocation, variant: "hub" as const }] : []),
   ];
-  const mapPath = crewLocation && routeTarget ? [crewLocation, routeTarget] : [];
+  const mapPath =
+    call?.tracking?.route?.points?.map((point) => ({
+      lat: point.lat,
+      lng: point.lng,
+    })) ??
+    (() => {
+      const routeTarget = status === "ARRIVED" || status === "COMPLETED" ? hubLocation ?? pickupLocation : pickupLocation;
+      return crewLocation && routeTarget ? [crewLocation, routeTarget] : [];
+    })();
+
   const pickupAddress = call?.pickupRequest?.address ?? "수거 위치 정보 없음";
   const hubAddress = call?.tracking?.processingCenter?.label ?? "처리 허브 정보 없음";
-  const crewAddress = crewLocation ? "크루 현재 이동 위치" : "크루 위치 확인 중";
-  const crewToPickupDistance = formatDistance(call?.tracking?.metrics?.crewToPickupMeters);
-  const crewToHubDistance = formatDistance(call?.tracking?.metrics?.crewToProcessingCenterMeters);
+  const crewDistance = call?.tracking?.route?.distanceLabel ?? formatDistance(call?.tracking?.metrics?.crewToPickupMeters);
+  const durationLabel = call?.tracking?.route?.durationLabel ?? "-";
+  const hubDistance = formatDistance(call?.tracking?.metrics?.crewToProcessingCenterMeters);
+  const liveStatus = call?.tracking?.metrics?.locationLive ? "실시간 GPS 반영 중" : "위치 확인 중";
+
+  const currentStep = status === "COMPLETED" ? 4 : status === "ARRIVED" ? 3 : status === "IN_PROGRESS" ? 2 : status === "ASSIGNED" ? 1 : 0;
 
   return (
     <CrewPhoneShell>
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto px-5 pb-5">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-cloud px-5 pb-6 pt-4 phone-scroll">
         <header className="flex items-start justify-between">
           <button
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-ink"
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-white bg-white text-ink shadow-sm"
             onClick={() => router.push(`/calls/${pickupRequestId}`)}
             type="button"
           >
             <ArrowLeft size={18} />
           </button>
           <button
-            className="flex h-10 items-center gap-2 rounded-full bg-slate-100 px-4 text-sm font-black text-slate-700"
+            className="flex h-11 items-center gap-2 rounded-full border border-white bg-white px-4 text-sm font-black text-slate-700 shadow-sm"
             onClick={() => router.push("/")}
             type="button"
           >
@@ -275,66 +283,75 @@ export default function CrewActiveCallPage() {
           </button>
         </header>
 
-        <section className="mt-4 rounded-[18px] bg-lgred p-4 text-white">
-          <p className="text-xs font-black text-white/70">진행 중인 수거</p>
-          <h1 className="mt-2 text-2xl font-black">{call ? applianceName(call) : "수거 요청"}</h1>
-          <p className="mt-2 text-sm font-semibold text-white/85">{call?.pickupRequest?.address ?? "수거 주소 정보 없음"}</p>
-        </section>
+        <section className="mt-5 overflow-hidden rounded-[28px] bg-[linear-gradient(135deg,#b6144b_0%,#7f1637_100%)] px-5 py-5 text-white shadow-[0_18px_40px_rgba(166,15,59,0.22)]">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-white/60">Live Pickup</p>
+          <h1 className="mt-3 text-[28px] font-black leading-[1.18]">{call ? applianceName(call) : "진행 중인 수거"}</h1>
+          <p className="mt-3 text-sm leading-6 text-white/82">{pickupAddress}</p>
 
-        <section className="mt-4 overflow-hidden rounded-[20px] border border-slate-200 bg-white">
-          {googleMapsApiKey ? (
-            <GoogleCanvasMap
-              apiKey={googleMapsApiKey}
-              center={mapCenter}
-              className="h-[260px] w-full"
-              fitBounds
-              markers={mapMarkers.map((marker) => ({
-                key: marker.key,
-                label: marker.label,
-                position: marker.position,
-                title: marker.key,
-              }))}
-              path={mapPath}
-              zoom={16}
-            />
-          ) : (
-            <LeafletTrackingMap center={mapCenter} className="h-[260px] w-full" markers={mapMarkers} path={mapPath} />
-          )}
-          <div className="grid grid-cols-1 gap-2 border-t border-slate-200 bg-white p-4">
-            <InfoTile label="크루 현재 위치" value={`${crewAddress} · 수거지까지 ${crewToPickupDistance}`} />
-            <InfoTile label="수거 위치" value={pickupAddress} />
-            <InfoTile label="처리 허브" value={`${hubAddress} · 허브까지 ${crewToHubDistance}`} />
+          <div className="mt-5 grid grid-cols-3 gap-3">
+            <HeroStat label="현재 상태" value={statusLabel(status)} />
+            <HeroStat label="수거지까지" value={crewDistance} />
+            <HeroStat label="예상 시간" value={durationLabel} />
           </div>
         </section>
 
-        <section className="mt-4 grid grid-cols-2 gap-2">
-          <InfoTile label="현재 상태" value={statusLabel(status)} />
-          <InfoTile label="수거지까지" value={crewToPickupDistance} />
-          <InfoTile label="허브까지" value={crewToHubDistance} />
-          <InfoTile label="좌표 갱신 시각" value={formatDateTime(call?.tracking?.driverLocation?.updatedAt)} />
+        <section className="mt-4 rounded-[24px] bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-black text-ink">
+            <Navigation size={16} className="text-lgred" />
+            이동 지도
+          </div>
+          <div className="mt-4 overflow-hidden rounded-[20px] border border-slate-200 bg-cloud">
+            {googleMapsApiKey ? (
+              <GoogleCanvasMap
+                apiKey={googleMapsApiKey}
+                center={mapCenter}
+                className="h-[280px] w-full"
+                fitBounds
+                markers={mapMarkers.map((marker) => ({
+                  key: marker.key,
+                  label: marker.label,
+                  position: marker.position,
+                  title: marker.key,
+                }))}
+                path={mapPath}
+                zoom={16}
+              />
+            ) : (
+              <LeafletTrackingMap center={mapCenter} className="h-[280px] w-full" markers={mapMarkers} path={mapPath} />
+            )}
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3">
+            <InfoTile label="수거지 주소" value={pickupAddress} />
+            <InfoTile label="상세 위치" value={call?.booking?.detailAddress?.trim() || "-"} />
+            <InfoTile label="처리 허브" value={`${hubAddress} · ${hubDistance}`} />
+          </div>
         </section>
 
-        <section className="mt-4 rounded-[18px] border border-slate-200 bg-white p-4">
-          <div className="flex items-center gap-2 text-sm font-black text-black">
-            <Navigation size={16} />
-            진행 안내
+        <section className="mt-4 rounded-[24px] bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-black text-ink">
+            <Timer size={16} className="text-lgred" />
+            진행 단계
           </div>
-          <div className="mt-3 grid grid-cols-1 gap-2">
-            <InfoTile label="수거 위치" value={call?.pickupRequest?.address ?? "-"} />
-            <InfoTile label="처리 허브" value={call?.tracking?.processingCenter?.label ?? "-"} />
-            <InfoTile
-              label="실시간 위치 상태"
-              value={call?.tracking?.metrics?.locationLive ? "실시간 GPS 반영 중" : "위치 확인 중"}
-            />
+          <div className="mt-4 space-y-4">
+            <ProgressRow active={currentStep >= 1} title="콜 수락 완료" description="배정이 확정되었고 사용자 앱에 크루 정보가 공유됩니다." />
+            <ProgressRow active={currentStep >= 2} title="수거지 이동 중" description="크루의 현재 위치와 이동 경로가 주기적으로 반영됩니다." />
+            <ProgressRow active={currentStep >= 3} title="문앞 도착" description="문앞 도착 처리 시 사용자 앱에도 도착 단계가 표시됩니다." />
+            <ProgressRow active={currentStep >= 4} title="e-waste 공장 전달 완료" description="처리 완료 등록 시 사용자 앱에 최종 완료 상태가 표시됩니다." />
           </div>
         </section>
 
-        <section className="mt-4 rounded-[18px] border border-slate-200 bg-white p-4">
-          <div className="flex items-center gap-2 text-sm font-black text-black">
-            <Truck size={16} />
+        <section className="mt-4 grid grid-cols-2 gap-3">
+          <InfoTile label="위치 갱신 시각" value={formatDateTime(call?.tracking?.driverLocation?.updatedAt)} />
+          <InfoTile label="실시간 상태" value={liveStatus} />
+        </section>
+
+        <section className="mt-4 rounded-[24px] bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-black text-ink">
+            <Truck size={16} className="text-lgred" />
             진행 처리
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-4 grid grid-cols-2 gap-3">
             <ActionButton
               disabled={loading || status !== "ASSIGNED"}
               icon={<Truck size={16} />}
@@ -353,25 +370,25 @@ export default function CrewActiveCallPage() {
               label="처리 완료"
               onClick={() => void runAction("complete")}
             />
-            <div className="rounded-[12px] bg-slate-50 p-3">
-              <p className="text-[11px] font-bold text-slate-500">사용자 앱 반영</p>
-              <p className="mt-1 text-sm font-black text-black">
-                {status === "ARRIVED"
+            <InfoTile
+              label="사용자 앱 반영"
+              value={
+                status === "ARRIVED"
                   ? "문앞 도착 단계 반영"
                   : status === "COMPLETED"
                     ? "e-waste 공장 전달 완료 반영"
-                    : "실시간 위치 공유"}
-              </p>
-            </div>
+                    : "실시간 위치 공유"
+              }
+            />
           </div>
         </section>
 
-        <section className="mt-4 rounded-[18px] border border-slate-200 bg-white p-4">
-          <div className="flex items-center gap-2 text-sm font-black text-black">
-            <Warehouse size={16} />
+        <section className="mt-4 rounded-[24px] bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-black text-ink">
+            <Warehouse size={16} className="text-lgred" />
             현장 및 허브 증빙 등록
           </div>
-          <div className="mt-3 space-y-3">
+          <div className="mt-4 space-y-3">
             <InputField label="현장 수거 사진 파일명" value={pickupPhotoFileName} onChange={setPickupPhotoFileName} />
             <InputField label="현장 확인 메모" value={inspectionMemo} onChange={setInspectionMemo} />
             <InputField label="허브 완료 사진 파일명" value={hubPhotoFileName} onChange={setHubPhotoFileName} />
@@ -379,11 +396,43 @@ export default function CrewActiveCallPage() {
           </div>
         </section>
 
-        <div className="mt-4 rounded-[14px] bg-slate-50 px-4 py-3 text-sm font-bold leading-6 text-slate-600">
+        <div className="mt-4 rounded-[18px] bg-white px-4 py-4 text-sm font-bold leading-6 text-slate-600 shadow-sm">
           {loading ? "처리 중..." : message}
         </div>
       </div>
     </CrewPhoneShell>
+  );
+}
+
+function HeroStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[18px] bg-white/12 px-3 py-3 backdrop-blur-sm">
+      <p className="text-[11px] font-bold text-white/65">{label}</p>
+      <p className="mt-2 text-sm font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function ProgressRow({
+  active,
+  title,
+  description,
+}: {
+  active: boolean;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex gap-3">
+      <div className="flex flex-col items-center">
+        <span className={`mt-1 h-3.5 w-3.5 rounded-full ${active ? "bg-lgred" : "bg-slate-200"}`} />
+        <span className={`mt-2 w-px flex-1 ${active ? "bg-lgred/30" : "bg-slate-200"}`} />
+      </div>
+      <div className="pb-2">
+        <p className={`text-sm font-black ${active ? "text-ink" : "text-slate-400"}`}>{title}</p>
+        <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
+      </div>
+    </div>
   );
 }
 
@@ -400,7 +449,7 @@ function ActionButton({
 }) {
   return (
     <button
-      className="flex h-12 items-center justify-center gap-2 rounded-[12px] bg-slate-100 text-sm font-black text-slate-700 disabled:text-slate-300"
+      className="flex h-13 items-center justify-center gap-2 rounded-[16px] bg-cloud text-sm font-black text-slate-700 disabled:text-slate-300"
       disabled={disabled}
       onClick={onClick}
       type="button"
@@ -413,9 +462,9 @@ function ActionButton({
 
 function InfoTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[12px] bg-slate-50 p-3">
-      <p className="text-[11px] font-bold text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-black leading-6 text-black">{value}</p>
+    <div className="rounded-[18px] bg-cloud px-4 py-4">
+      <p className="text-[11px] font-bold text-slate-400">{label}</p>
+      <p className="mt-2 text-sm font-black leading-6 text-ink">{value}</p>
     </div>
   );
 }
@@ -433,7 +482,7 @@ function InputField({
     <label className="block">
       <span className="text-xs font-black text-slate-500">{label}</span>
       <input
-        className="mt-1 h-11 w-full rounded-[12px] border border-slate-200 px-3 text-sm font-semibold text-black outline-none focus:border-lgred"
+        className="mt-1 h-12 w-full rounded-[16px] border border-slate-200 bg-cloud px-4 text-sm font-semibold text-ink outline-none focus:border-lgred"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />

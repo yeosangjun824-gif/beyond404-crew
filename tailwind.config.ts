@@ -10,10 +10,10 @@ const config: Config = {
     extend: {
       colors: {
         ink: "#111827",
-        lgred: "#A50034",
-        lgdark: "#6B0036",
-        mint: "#A50034",
-        cloud: "#f7f8fb",
+        lgred: "#B6144B",
+        lgdark: "#7F1637",
+        mint: "#D65A82",
+        cloud: "#F4F6FA",
       },
       boxShadow: {
         phone: "0 24px 60px rgba(17, 24, 39, 0.18)",
