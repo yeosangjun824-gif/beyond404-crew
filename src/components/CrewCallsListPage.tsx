@@ -9,6 +9,7 @@ import {
   applianceName,
   formatRequestTime,
   pickupTypeLabel,
+  sortCallsByLatest,
   statusLabel,
   type CrewCall,
 } from "@/lib/crew-api";
@@ -41,7 +42,7 @@ export function CrewCallsListPage({
 
     try {
       const nextCalls = await fetchCalls();
-      setCalls(nextCalls);
+      setCalls(sortCallsByLatest(nextCalls));
       setLastLoadedAt(formatLoadedTime(new Date()));
     } catch {
       setErrorMessage("목록을 불러오지 못했습니다. 백엔드 연결 상태를 확인해 주세요.");

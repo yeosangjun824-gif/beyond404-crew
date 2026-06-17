@@ -11,8 +11,8 @@ export default function ActiveCallsPage() {
       emptyMessage="현재 진행 중인 수거가 없습니다."
       fetchCalls={fetchActiveCrewCalls}
       icon={Truck}
-      subtitle="수락한 콜의 이동 상황과 처리 상태를 이어서 관리합니다."
-      title="진행 중인 수거"
+      subtitle="수락한 콜의 이동 상태와 처리 진행 상황을 이어서 관리할 수 있어요."
+      title="진행 중"
       toHref={(pickupRequestId) => `/calls/${pickupRequestId}/active`}
     />
   );

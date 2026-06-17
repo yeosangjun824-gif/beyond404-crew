@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CheckCircle2, ClipboardList, Home, Truck } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ClipboardList, Star, Truck, UserRound } from "lucide-react";
 import { CrewBottomNav } from "@/components/CrewBottomNav";
 import { CrewPhoneShell } from "@/components/CrewPhoneShell";
 import {
@@ -11,6 +10,20 @@ import {
   fetchPendingCrewCalls,
   type CrewCall,
 } from "@/lib/crew-api";
+
+type CrewProfileSummary = {
+  name: string;
+  photoUrl: string | null;
+  rating: number;
+  reviewSummary: string[];
+};
+
+const DEFAULT_CREW_PROFILE: CrewProfileSummary = {
+  name: "LG 수거 크루",
+  photoUrl: null,
+  rating: 4.9,
+  reviewSummary: ["친절하고 신속한 수거 진행", "약속 시간 준수 및 안전 처리"],
+};
 
 export default function CrewHomePage() {
   const [pendingCalls, setPendingCalls] = useState<CrewCall[]>([]);
@@ -35,7 +48,7 @@ export default function CrewHomePage() {
       setActiveCalls(active);
       setCompletedCalls(completed);
     } catch {
-      setErrorMessage("수거 현황을 불러오지 못했습니다. 백엔드 연결 상태를 확인해 주세요.");
+      setErrorMessage("배차 현황을 불러오지 못했습니다. 백엔드 연결 상태를 확인해 주세요.");
     } finally {
       setLoading(false);
     }
@@ -58,7 +71,11 @@ export default function CrewHomePage() {
     return () => window.clearInterval(timer);
   }, [dispatchEnabled]);
 
-  const crewName = useMemo(() => resolveCrewName([...activeCalls, ...pendingCalls, ...completedCalls]), [activeCalls, completedCalls, pendingCalls]);
+  const profile = useMemo(
+    () => resolveCrewProfile([...activeCalls, ...pendingCalls, ...completedCalls]),
+    [activeCalls, completedCalls, pendingCalls],
+  );
+
   const totalCalls = pendingCalls.length + activeCalls.length + completedCalls.length;
 
   const toggleDispatch = () => {
@@ -76,9 +93,9 @@ export default function CrewHomePage() {
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-28 pt-4 phone-scroll">
         <header className="grid grid-cols-[40px_1fr_64px] items-center">
           <button
+            aria-label="이전"
             className="flex h-10 w-10 items-center justify-center rounded-full text-ink transition hover:bg-white"
             type="button"
-            aria-label="이전"
           >
             <ArrowLeft size={20} />
           </button>
@@ -92,17 +109,21 @@ export default function CrewHomePage() {
         </header>
 
         <section className="mt-7">
-          <p className="text-[15px] font-bold text-slate-600">{crewName}님, 반가워요</p>
-          <h1 className="mt-2 text-[22px] font-extrabold leading-snug text-ink">오늘 수거 현황을 한눈에 확인해보세요</h1>
+          <p className="text-[15px] font-bold text-slate-600">{profile.name}님, 안녕하세요</p>
+          <h1 className="mt-2 text-[22px] font-extrabold leading-snug text-ink">
+            오늘 배차 상태와 내 정보를 한눈에 확인해 보세요
+          </h1>
         </section>
 
         <section className="mt-5 rounded-[22px] bg-white px-5 py-5 shadow-[0_6px_18px_rgba(15,23,42,0.05)]">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-[14px] font-bold text-slate-500">오늘 배차 상태</p>
-              <p className="mt-1 text-[28px] font-extrabold leading-none text-ink">{dispatchEnabled ? "수신 중" : "수신 중지"}</p>
+              <p className="mt-1 text-[28px] font-extrabold leading-none text-ink">
+                {dispatchEnabled ? "수신 중" : "수신 중지"}
+              </p>
               <p className="mt-3 text-[12px] font-medium text-slate-500">
-                {dispatchEnabled ? "새 수거 요청을 받을 수 있어요" : "요청 수신을 잠시 멈춘 상태예요"}
+                {dispatchEnabled ? "새 수거 요청을 받을 수 있어요" : "요청 수신이 잠시 멈춘 상태예요"}
               </p>
             </div>
             <button
@@ -125,39 +146,57 @@ export default function CrewHomePage() {
 
           <div className="mt-5 h-px bg-slate-100" />
 
-          <div className="mt-4 grid grid-cols-3 divide-x divide-slate-100">
+          <div className="mt-4 grid grid-cols-4 divide-x divide-slate-100">
+            <StatusStat label="전체" value={`${totalCalls}건`} />
             <StatusStat label="수거 요청" value={`${pendingCalls.length}건`} />
             <StatusStat label="진행 중" value={`${activeCalls.length}건`} />
-            <StatusStat label="수거 완료" value={`${completedCalls.length}건`} />
+            <StatusStat label="처리 완료" value={`${completedCalls.length}건`} />
           </div>
         </section>
 
-        <section className="mt-4 rounded-[22px] bg-white py-3 shadow-[0_6px_18px_rgba(15,23,42,0.05)]">
-          <div className="flex items-center justify-between px-4 py-2">
-            <h2 className="text-[16px] font-extrabold text-ink">내 작업</h2>
-            <span className="rounded-full bg-cloud px-3 py-1 text-[12px] font-bold text-slate-500">전체 {totalCalls}</span>
+        <section className="mt-4 rounded-[22px] bg-white px-5 py-5 shadow-[0_6px_18px_rgba(15,23,42,0.05)]">
+          <div className="flex items-start gap-4">
+            {profile.photoUrl ? (
+              <img
+                alt={profile.name}
+                className="h-16 w-16 rounded-[22px] object-cover"
+                src={profile.photoUrl}
+              />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-lgred/10 text-lgred">
+                <UserRound size={28} />
+              </div>
+            )}
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h2 className="truncate text-[20px] font-extrabold text-ink">{profile.name}</h2>
+                <span className="rounded-full bg-cloud px-3 py-1 text-[11px] font-bold text-slate-600">
+                  {dispatchEnabled ? "배차 수신 중" : "배차 중지"}
+                </span>
+              </div>
+
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-[12px] font-bold text-amber-700">
+                <Star size={14} className="fill-current" />
+                평점 {profile.rating.toFixed(1)}
+              </div>
+
+              <p className="mt-3 text-[13px] font-semibold text-slate-500">
+                고객에게 노출되는 기본 프로필과 최근 후기 요약을 확인할 수 있어요.
+              </p>
+            </div>
           </div>
-          <WorkRow
-            count={pendingCalls.length}
-            href="/calls"
-            icon={<ClipboardList size={20} />}
-            label="수거 요청"
-            sublabel="수락 대기"
-          />
-          <WorkRow
-            count={activeCalls.length}
-            href="/active"
-            icon={<Truck size={20} />}
-            label="진행 중인 수거"
-            sublabel="이동 및 처리"
-          />
-          <WorkRow
-            count={completedCalls.length}
-            href="/completed"
-            icon={<CheckCircle2 size={20} />}
-            label="처리 완료"
-            sublabel="완료 이력"
-          />
+
+          <div className="mt-5 rounded-[18px] bg-cloud px-4 py-4">
+            <p className="text-[12px] font-extrabold text-slate-500">최근 후기 요약</p>
+            <div className="mt-3 space-y-2">
+              {profile.reviewSummary.map((summary, index) => (
+                <p key={`${summary}-${index}`} className="text-[13px] font-semibold leading-6 text-ink">
+                  • {summary}
+                </p>
+              ))}
+            </div>
+          </div>
         </section>
 
         {errorMessage ? (
@@ -168,7 +207,7 @@ export default function CrewHomePage() {
 
         {loading ? (
           <div className="mt-4 rounded-[18px] bg-white px-4 py-4 text-sm font-semibold leading-6 text-slate-500 shadow-sm">
-            현황을 불러오는 중입니다...
+            배차 현황을 불러오는 중입니다...
           </div>
         ) : null}
       </div>
@@ -179,50 +218,25 @@ export default function CrewHomePage() {
 
 function StatusStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="px-3 first:pl-0 last:pr-0">
-      <p className="text-center text-[22px] font-extrabold leading-none text-ink">{value}</p>
+    <div className="px-2 first:pl-0 last:pr-0">
+      <p className="text-center text-[20px] font-extrabold leading-none text-ink">{value}</p>
       <p className="mt-2 text-center text-[12px] font-medium text-slate-500">{label}</p>
     </div>
   );
 }
 
-function WorkRow({
-  count,
-  href,
-  icon,
-  label,
-  sublabel,
-}: {
-  count: number;
-  href: string;
-  icon: React.ReactNode;
-  label: string;
-  sublabel: string;
-}) {
-  return (
-    <Link
-      className="mx-3 flex items-center gap-4 border-t border-slate-100 px-1 py-4 transition first:border-t-0 hover:bg-slate-50"
-      href={href}
-    >
-      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-lgred/10 text-lgred">
-        {icon}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[15px] font-extrabold text-ink">{label}</p>
-        <p className="mt-1 text-[12px] font-medium text-slate-500">{sublabel}</p>
-      </div>
-      <span className="rounded-full bg-cloud px-3 py-1 text-[12px] font-bold text-slate-600">{count}건</span>
-    </Link>
-  );
-}
-
-function resolveCrewName(calls: CrewCall[]) {
+function resolveCrewProfile(calls: CrewCall[]): CrewProfileSummary {
   for (const call of calls) {
-    const name = call.crewProfile?.name ?? call.pickupRequest?.crewName;
-    if (name?.trim()) {
-      return name.trim();
+    if (call.crewProfile?.name?.trim()) {
+      return {
+        name: call.crewProfile.name.trim(),
+        photoUrl: call.crewProfile.photoUrl?.trim() || null,
+        rating: call.crewProfile.rating || DEFAULT_CREW_PROFILE.rating,
+        reviewSummary:
+          call.crewProfile.reviewSummary?.filter((value) => value.trim().length > 0) || DEFAULT_CREW_PROFILE.reviewSummary,
+      };
     }
   }
 
-  return "크루";
+  return DEFAULT_CREW_PROFILE;
 }
