@@ -11,7 +11,7 @@ import {
   updateCrewLocation,
   type CrewCall,
 } from "@/lib/crew-api";
-import { ArrowLeft, ChevronRight, Home, MapPin, Navigation, Truck, Warehouse } from "lucide-react";
+import { ArrowLeft, Home, MapPin, Navigation, Truck, Warehouse, X } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
@@ -87,12 +87,12 @@ function kakaoWalkRouteUrl(origin: Coordinate, destination: Coordinate) {
 function formatWalkDuration(distanceMeters?: number | null) {
   if (distanceMeters == null) return "-";
   const minutes = Math.max(1, Math.round(distanceMeters / 80));
-  return `${minutes} min`;
+  return `${minutes}분`;
 }
 
 function formatCalories(distanceMeters?: number | null) {
   if (distanceMeters == null) return "-";
-  return `${Math.max(1, Math.round(distanceMeters * 0.044))} kcal`;
+  return `${Math.max(1, Math.round(distanceMeters * 0.044))}kcal`;
 }
 
 export default function CrewActiveCallPage() {
@@ -102,7 +102,7 @@ export default function CrewActiveCallPage() {
 
   const [call, setCall] = useState<CrewCall | null>(null);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("진행 중인 수거 정보를 불러오는 중입니다.");
+  const [message, setMessage] = useState<string | null>(null);
   const [selectedPickupOpen, setSelectedPickupOpen] = useState(false);
   const [selectedMapCenter, setSelectedMapCenter] = useState<Coordinate | null>(null);
   const [selectedMapZoom, setSelectedMapZoom] = useState<number | null>(null);
@@ -114,7 +114,6 @@ export default function CrewActiveCallPage() {
     try {
       const data = await fetchCrewCallDetail(pickupRequestId);
       setCall(data);
-      setMessage("진행 중인 수거 정보를 업데이트했습니다.");
     } catch {
       setMessage("진행 중인 수거 정보를 불러오지 못했습니다.");
     } finally {
@@ -146,7 +145,6 @@ export default function CrewActiveCallPage() {
         const updated = await updateCrewLocation(pickupRequestId, payload);
         if (!stopped) {
           setCall(updated);
-          setMessage("크루 위치를 실시간으로 업데이트하고 있습니다.");
         }
       } catch {
         if (!stopped) {
@@ -157,7 +155,7 @@ export default function CrewActiveCallPage() {
 
     const startFallbackSimulation = () => {
       if (call?.booking?.pickupLat == null || call?.booking?.pickupLng == null) {
-        setMessage("수거지 좌표가 없어 크루 위치 시뮬레이션을 시작할 수 없습니다.");
+        setMessage("수거지 좌표가 없어 위치 시뮬레이션을 시작할 수 없습니다.");
         return () => undefined;
       }
 
@@ -210,7 +208,6 @@ export default function CrewActiveCallPage() {
         },
         () => {
           if (!fallbackCleanup) {
-            setMessage("위치 권한을 받지 못해 시뮬레이션 위치를 전송합니다.");
             fallbackCleanup = startFallbackSimulation();
           }
         },
@@ -228,7 +225,6 @@ export default function CrewActiveCallPage() {
       };
     }
 
-    setMessage("이 기기에서는 GPS를 사용할 수 없어 시뮬레이션 위치를 전송합니다.");
     fallbackCleanup = startFallbackSimulation();
 
     return () => {
@@ -262,7 +258,7 @@ export default function CrewActiveCallPage() {
             });
 
       setCall(updated);
-      setMessage(action === "depart" ? "수거지 출발 처리가 완료되었습니다." : "처리 완료가 반영되었습니다.");
+      setMessage(action === "depart" ? "수거지 출발 처리가 완료됐습니다." : "처리 완료가 반영됐습니다.");
     } catch {
       setMessage("진행 처리 중 문제가 발생했습니다.");
     } finally {
@@ -292,8 +288,11 @@ export default function CrewActiveCallPage() {
     ...(crewLocation
       ? [{ key: "crew" as const, label: "C", position: crewLocation, title: "크루 현재 위치", variant: "crew" as const }]
       : []),
-    ...(hubLocation ? [{ key: "hub" as const, label: "H", position: hubLocation, title: "처리 허브", variant: "hub" as const }] : []),
+    ...(hubLocation
+      ? [{ key: "hub" as const, label: "H", position: hubLocation, title: "처리 허브", variant: "hub" as const }]
+      : []),
   ];
+
   const incomingRoadRoute = call?.tracking?.route;
   const incomingRoadRoutePoints =
     incomingRoadRoute?.points?.map((point) => ({
@@ -327,14 +326,16 @@ export default function CrewActiveCallPage() {
   ]);
 
   const roadRoutePoints = lockedCarRoute?.points ?? [];
-  const routeDistanceMeters = lockedCarRoute?.distanceMeters ?? incomingRoadRoute?.distanceMeters ?? call?.tracking?.metrics?.crewToPickupMeters;
+  const routeDistanceMeters =
+    lockedCarRoute?.distanceMeters ?? incomingRoadRoute?.distanceMeters ?? call?.tracking?.metrics?.crewToPickupMeters;
   const mapPath = routeMode === "car" ? roadRoutePoints : [];
   const hasRoadRoute = routeMode === "car" && roadRoutePoints.length > 1;
   const isRouteSearching = routeMode === "car" && !hasRoadRoute && Boolean(crewLocation && routeTarget);
-  const canOpenWalkLink = routeMode === "walk" && crewLocation && routeTarget;
+  const canOpenWalkLink = routeMode === "walk" && Boolean(crewLocation && routeTarget);
 
   const statusText = pickupStatusLabel(status);
-  const crewDistance = lockedCarRoute?.distanceLabel ?? incomingRoadRoute?.distanceLabel ?? formatDistance(call?.tracking?.metrics?.crewToPickupMeters);
+  const crewDistance =
+    lockedCarRoute?.distanceLabel ?? incomingRoadRoute?.distanceLabel ?? formatDistance(call?.tracking?.metrics?.crewToPickupMeters);
   const durationLabel = lockedCarRoute?.durationLabel ?? incomingRoadRoute?.durationLabel ?? "-";
   const calorieLabel = formatCalories(routeDistanceMeters);
   const walkMetric = [formatDistance(routeDistanceMeters), formatWalkDuration(routeDistanceMeters), calorieLabel]
@@ -349,7 +350,6 @@ export default function CrewActiveCallPage() {
 
   const handleMarkerClick = (marker: { key: string; position: Coordinate }) => {
     if (marker.key !== "pickup") return;
-
     setSelectedPickupOpen(true);
     setSelectedMapCenter(marker.position);
     setSelectedMapZoom(19);
@@ -361,14 +361,16 @@ export default function CrewActiveCallPage() {
     setSelectedMapZoom(null);
   };
 
-  const primaryDetailLink = status === "COMPLETED" ? "/" : "/active";
   const destinationLabel = status === "ARRIVED" || status === "COMPLETED" ? "처리 허브" : "수거지";
   const destinationAddress = destinationLabel === "처리 허브" ? hubAddress : pickupAddress;
-  const navigationMetric = routeMode === "walk" ? walkMetric : [crewDistance, durationLabel, calorieLabel].filter((value) => value && value !== "-").join(" · ");
+  const navigationMetric =
+    routeMode === "walk"
+      ? walkMetric
+      : [crewDistance, durationLabel, calorieLabel].filter((value) => value && value !== "-").join(" · ");
 
   return (
     <CrewPhoneShell>
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-cloud px-5 pb-6 pt-4 phone-scroll">
+      <div className="phone-scroll flex min-h-0 flex-1 flex-col overflow-auto bg-cloud px-5 pb-6 pt-4">
         <header className="flex items-start justify-between">
           <button
             className="flex h-11 w-11 items-center justify-center rounded-full border border-white bg-white text-ink shadow-sm"
@@ -410,6 +412,7 @@ export default function CrewActiveCallPage() {
                     routeWeight={routeMode === "car" ? (hasRoadRoute ? 10 : 5) : 5}
                     zoom={mapZoom}
                   />
+
                   <div className="absolute right-3 top-3 z-30 flex rounded-full bg-white/95 p-1 shadow-[0_8px_24px_rgba(15,23,42,0.14)] backdrop-blur">
                     {(["car", "walk"] as const).map((mode) => (
                       <button
@@ -424,6 +427,7 @@ export default function CrewActiveCallPage() {
                       </button>
                     ))}
                   </div>
+
                   <div className="pointer-events-none absolute left-3 right-3 top-14 z-30 rounded-[22px] bg-white/95 px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.14)] backdrop-blur">
                     <div className="flex items-start gap-3">
                       <div className="mt-1 flex flex-col items-center">
@@ -439,17 +443,26 @@ export default function CrewActiveCallPage() {
                       </div>
                     </div>
                   </div>
+
                   <div className="absolute bottom-3 left-3 right-3 z-30 flex items-center justify-between rounded-[18px] bg-white/95 px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.14)] backdrop-blur">
                     <div>
                       <p className="text-xs font-black text-slate-500">
-                        {routeMode === "walk" ? "도보 경로는 카카오맵에서 확인" : hasRoadRoute ? "차량 최단 경로 안내 중" : "경로 탐색 중"}
+                        {routeMode === "walk"
+                          ? "도보 경로는 카카오맵에서 확인"
+                          : hasRoadRoute
+                            ? "차량 최단 경로 안내 중"
+                            : isRouteSearching
+                              ? "경로 탐색 중"
+                              : "경로 준비 중"}
                       </p>
                       <p className="mt-1 text-sm font-black text-ink">{navigationMetric || "위치 확인 중"}</p>
                     </div>
-                    {canOpenWalkLink ? (
+                    {canOpenWalkLink && crewLocation && routeTarget ? (
                       <button
                         className="rounded-full bg-ink px-3 py-1 text-xs font-black text-white"
-                        onClick={() => window.open(kakaoWalkRouteUrl(crewLocation, routeTarget), "_blank", "noopener,noreferrer")}
+                        onClick={() =>
+                          window.open(kakaoWalkRouteUrl(crewLocation, routeTarget), "_blank", "noopener,noreferrer")
+                        }
                         type="button"
                       >
                         카카오맵 도보 길찾기
@@ -466,7 +479,7 @@ export default function CrewActiveCallPage() {
                   <div>
                     <p className="text-sm font-black text-ink">Kakao Maps 연결이 필요합니다</p>
                     <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
-                      NEXT_PUBLIC_KAKAO_MAP_APP_KEY 환경변수를 설정하면 Kakao 지도로 표시됩니다.
+                      `NEXT_PUBLIC_KAKAO_MAP_APP_KEY` 환경변수를 설정하면 지도를 표시할 수 있습니다.
                     </p>
                   </div>
                 </div>
@@ -487,7 +500,9 @@ export default function CrewActiveCallPage() {
             <div className="mt-4 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
               <div className="flex items-start justify-between gap-3 px-5 pb-2 pt-5">
                 <div>
-                  <p className="text-[28px] font-black leading-none text-ink">{call ? applianceName(call) : "수거지 정보"}</p>
+                  <p className="text-[28px] font-black leading-none text-ink">
+                    {call ? applianceName(call) : "수거지 정보"}
+                  </p>
                   <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">{pickupAddress}</p>
                   <p className="mt-2 text-sm font-semibold leading-6 text-slate-400">{detailAddress}</p>
                 </div>
@@ -496,7 +511,7 @@ export default function CrewActiveCallPage() {
                   onClick={closePickupCard}
                   type="button"
                 >
-                  <ChevronRight className="rotate-90" size={18} />
+                  <X size={18} />
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-3 px-5 pb-5 pt-3">
@@ -528,7 +543,7 @@ export default function CrewActiveCallPage() {
               disabled={loading || !canDepart}
               icon={<Truck size={18} />}
               label="수거지 출발"
-              description="콜 수락 후 수거지로 이동을 시작할 때 누릅니다."
+              description="콜 수락 후 수거지로 이동을 시작할 때 눌러 주세요."
               onClick={() => void runAction("depart")}
             />
             <ProgressActionCard
@@ -536,7 +551,7 @@ export default function CrewActiveCallPage() {
               disabled={loading || !canComplete}
               icon={<Warehouse size={18} />}
               label="처리 완료"
-              description="수거 및 전달이 끝났을 때 최종 완료 상태로 반영합니다."
+              description="수거 후 허브 전달과 처리 완료를 등록합니다."
               onClick={() => void runAction("complete")}
             />
           </div>
@@ -547,17 +562,19 @@ export default function CrewActiveCallPage() {
           <div className="mt-3 grid grid-cols-2 gap-3">
             <InfoTile label="진행 상태" value={statusText} />
             <InfoTile label="예상 시간" value={durationLabel} />
-                <InfoTile label="예상 칼로리" value={calorieLabel} />
+            <InfoTile label="예상 칼로리" value={calorieLabel} />
           </div>
         </section>
 
-        <div className="mt-4 rounded-[18px] bg-white px-4 py-4 text-sm font-bold leading-6 text-slate-600 shadow-sm">
-          {loading ? "처리 중..." : message}
-        </div>
+        {message ? (
+          <div className="mt-4 rounded-[18px] bg-white px-4 py-4 text-sm font-bold leading-6 text-slate-600 shadow-sm">
+            {message}
+          </div>
+        ) : null}
 
         <button
-          className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-[16px] border border-slate-200 bg-white text-sm font-black text-slate-700 shadow-sm"
-          onClick={() => router.push(primaryDetailLink)}
+          className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-[18px] border border-slate-200 bg-white text-base font-black text-slate-700 shadow-sm"
+          onClick={() => router.push("/active")}
           type="button"
         >
           목록으로 돌아가기
@@ -584,10 +601,8 @@ function ProgressActionCard({
 }) {
   return (
     <button
-      className={`flex w-full items-start gap-4 rounded-[20px] border px-4 py-4 text-left transition ${
-        active
-          ? "border-lgred/25 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.05)]"
-          : "border-slate-200 bg-cloud text-slate-400"
+      className={`flex min-h-[92px] w-full items-start gap-4 rounded-[20px] border px-4 py-4 text-left transition ${
+        active ? "border-lgred/25 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.05)]" : "border-slate-200 bg-cloud text-slate-400"
       }`}
       disabled={disabled}
       onClick={onClick}
