@@ -58,6 +58,8 @@ export type CrewCall = {
     detailAddress?: string | null;
     pickupLat?: number | null;
     pickupLng?: number | null;
+    pickupAccuracyMeters?: number | null;
+    pickupSource?: string | null;
   } | null;
   dispatchInfo?: {
     alertMessage: string;
@@ -78,6 +80,12 @@ export type CrewCall = {
       crewToPickupMeters: number | null;
       crewToProcessingCenterMeters: number | null;
       locationLive: boolean;
+      driverAccuracyMeters?: number | null;
+      pickupAccuracyMeters?: number | null;
+      proximityStatus?: "SAME_PLACE" | "NEAR" | "ROUTE_REQUIRED" | "LOW_CONFIDENCE" | string;
+      effectiveDistanceMeters?: number | null;
+      effectiveDurationSeconds?: number | null;
+      distanceConfidence?: "HIGH" | "MEDIUM" | "LOW" | string;
     } | null;
     nearbyCrews?: NearbyCrew[];
     driverLocation?: {
@@ -86,6 +94,9 @@ export type CrewCall = {
       heading: number;
       speed: number;
       updatedAt?: string | null;
+      accuracyMeters?: number | null;
+      source?: string | null;
+      collectedAt?: string | null;
     } | null;
     route?: {
       mode: string;
@@ -99,6 +110,9 @@ export type CrewCall = {
         lng: number;
       }[];
       calculatedAt?: string | null;
+      routeSource?: string | null;
+      approximate?: boolean;
+      suppressedByProximity?: boolean;
     } | null;
     locationHistory?: {
       lat: number;
@@ -106,6 +120,8 @@ export type CrewCall = {
       heading: number;
       speed: number;
       recordedAt: string;
+      accuracyMeters?: number | null;
+      source?: string | null;
     }[];
   } | null;
   settlement?: {
@@ -132,7 +148,7 @@ function resolveApiBaseUrl() {
     return trimTrailingSlash(publicBaseUrl);
   }
 
-  return "http://127.0.0.1:8080";
+  return "http://127.0.0.1:8082";
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -221,6 +237,9 @@ export function updateCrewLocation(
     lng: number;
     heading?: number;
     speed?: number;
+    accuracyMeters?: number;
+    collectedAt?: string;
+    source?: string;
   },
 ) {
   return crewRequest<CrewCall>(`/api/crew/pickups/${pickupRequestId}/location`, {
@@ -230,6 +249,9 @@ export function updateCrewLocation(
       lng: payload.lng,
       heading: payload.heading ?? 0,
       speed: payload.speed ?? 0,
+      accuracyMeters: payload.accuracyMeters,
+      collectedAt: payload.collectedAt,
+      source: payload.source,
     }),
   });
 }

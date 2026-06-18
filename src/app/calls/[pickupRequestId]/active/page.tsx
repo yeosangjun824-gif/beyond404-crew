@@ -25,7 +25,12 @@ type LocationPayload = {
   lng: number;
   heading?: number;
   speed?: number;
+  accuracyMeters?: number;
+  collectedAt?: string;
+  source?: string;
 };
+
+type TrackingMetrics = NonNullable<NonNullable<CrewCall["tracking"]>["metrics"]>;
 
 type PickupMapMarker = {
   key: "pickup" | "crew" | "hub";
@@ -43,7 +48,20 @@ type LockedRoute = {
   durationSeconds?: number | null;
   distanceLabel?: string | null;
   durationLabel?: string | null;
+  mode?: string | null;
 };
+
+function distanceMeters(a: Coordinate, b: Coordinate) {
+  const earthRadius = 6371000;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return earthRadius * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
 
 const kakaoMapAppKey = process.env.NEXT_PUBLIC_KAKAO_MAP_APP_KEY?.trim() ?? "";
 const DEFAULT_PICKUP_PHOTO = "crew-pickup-proof-demo.jpg";
@@ -95,6 +113,20 @@ function formatCalories(distanceMeters?: number | null) {
   return `${Math.max(1, Math.round(distanceMeters * 0.044))}kcal`;
 }
 
+function formatDurationSeconds(seconds?: number | null) {
+  if (seconds == null) return "-";
+  return `${Math.max(1, Math.round(seconds / 60))}분`;
+}
+
+function formatPrecisionDistance(metrics?: TrackingMetrics | null) {
+  if (!metrics) return "-";
+  const distance = metrics.effectiveDistanceMeters ?? metrics.crewToPickupMeters;
+  if (metrics.proximityStatus === "SAME_PLACE") return "20m 이내";
+  if (metrics.proximityStatus === "NEAR") return distance == null ? "근처" : `${Math.max(1, Math.round(distance))}m 이내`;
+  if (metrics.distanceConfidence === "LOW" && distance != null) return `약 ${Math.round(distance)}m`;
+  return formatDistance(distance);
+}
+
 export default function CrewActiveCallPage() {
   const router = useRouter();
   const params = useParams<{ pickupRequestId: string }>();
@@ -139,6 +171,9 @@ export default function CrewActiveCallPage() {
     let stopped = false;
     let fallbackCleanup: (() => void) | undefined;
     let lastSentAt = 0;
+    let bestPosition: GeolocationPosition | null = null;
+    let bestFixTimer: number | undefined;
+    let lastSentPoint: Coordinate | null = null;
 
     const sendLocation = async (payload: LocationPayload) => {
       try {
@@ -181,6 +216,9 @@ export default function CrewActiveCallPage() {
           lng: Number(lng.toFixed(6)),
           heading: headingToHub ? 135 : 90,
           speed: Math.max(4, 18 - step),
+          accuracyMeters: 999,
+          collectedAt: new Date().toISOString(),
+          source: "simulation",
         });
       };
 
@@ -193,18 +231,58 @@ export default function CrewActiveCallPage() {
     };
 
     if ("geolocation" in navigator && window.isSecureContext) {
+      const sendBrowserPosition = (position: GeolocationPosition) => {
+        const point = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        const now = Date.now();
+        const movedMeters = lastSentPoint ? distanceMeters(lastSentPoint, point) : Number.POSITIVE_INFINITY;
+        const accuracy = position.coords.accuracy;
+
+        if (now - position.timestamp > 10000) return;
+        if (now - lastSentAt < 2500 && movedMeters < 10 && accuracy > 25) return;
+
+        lastSentAt = now;
+        lastSentPoint = point;
+        void sendLocation({
+          lat: point.lat,
+          lng: point.lng,
+          heading: position.coords.heading ?? 0,
+          speed: position.coords.speed ?? 0,
+          accuracyMeters: accuracy,
+          collectedAt: new Date(position.timestamp).toISOString(),
+          source: "browser_geolocation",
+        });
+      };
+
       const watchId = navigator.geolocation.watchPosition(
         (position) => {
-          const now = Date.now();
-          if (now - lastSentAt < 3000) return;
-          lastSentAt = now;
+          if (Date.now() - position.timestamp > 10000) return;
 
-          void sendLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            heading: position.coords.heading ?? 0,
-            speed: position.coords.speed ?? 0,
-          });
+          if (!bestPosition || position.coords.accuracy < bestPosition.coords.accuracy) {
+            bestPosition = position;
+          }
+
+          if (position.coords.accuracy <= 25) {
+            if (bestFixTimer) {
+              window.clearTimeout(bestFixTimer);
+              bestFixTimer = undefined;
+            }
+            bestPosition = null;
+            sendBrowserPosition(position);
+            return;
+          }
+
+          if (!bestFixTimer) {
+            bestFixTimer = window.setTimeout(() => {
+              if (bestPosition) {
+                sendBrowserPosition(bestPosition);
+                bestPosition = null;
+              }
+              bestFixTimer = undefined;
+            }, 5000);
+          }
         },
         () => {
           if (!fallbackCleanup) {
@@ -213,14 +291,17 @@ export default function CrewActiveCallPage() {
         },
         {
           enableHighAccuracy: true,
-          maximumAge: 3000,
-          timeout: 10000,
+          maximumAge: 0,
+          timeout: 15000,
         },
       );
 
       return () => {
         stopped = true;
         navigator.geolocation.clearWatch(watchId);
+        if (bestFixTimer) {
+          window.clearTimeout(bestFixTimer);
+        }
         fallbackCleanup?.();
       };
     }
@@ -294,6 +375,9 @@ export default function CrewActiveCallPage() {
   ];
 
   const incomingRoadRoute = call?.tracking?.route;
+  const trackingMetrics = call?.tracking?.metrics;
+  const routeSuppressedByProximity =
+    incomingRoadRoute?.suppressedByProximity || incomingRoadRoute?.mode === "PROXIMITY";
   const incomingRoadRoutePoints =
     incomingRoadRoute?.points?.map((point) => ({
       lat: point.lat,
@@ -303,9 +387,13 @@ export default function CrewActiveCallPage() {
 
   useEffect(() => {
     setLockedCarRoute(null);
-  }, [pickupRequestId, routePhase]);
+  }, [pickupRequestId, routePhase, routeSuppressedByProximity, crewLocation?.lat, crewLocation?.lng]);
 
   useEffect(() => {
+    if (routeSuppressedByProximity || incomingRoadRoute?.mode !== "DRIVE") {
+      setLockedCarRoute(null);
+      return;
+    }
     if (incomingRoadRoutePoints.length <= 1) return;
 
     setLockedCarRoute((previous) =>
@@ -315,9 +403,12 @@ export default function CrewActiveCallPage() {
         durationSeconds: incomingRoadRoute?.durationSeconds,
         distanceLabel: incomingRoadRoute?.distanceLabel,
         durationLabel: incomingRoadRoute?.durationLabel,
+        mode: incomingRoadRoute?.mode,
       },
     );
   }, [
+    routeSuppressedByProximity,
+    incomingRoadRoute?.mode,
     incomingRoadRoute?.distanceLabel,
     incomingRoadRoute?.distanceMeters,
     incomingRoadRoute?.durationLabel,
@@ -325,18 +416,27 @@ export default function CrewActiveCallPage() {
     incomingRoadRoutePoints,
   ]);
 
-  const roadRoutePoints = lockedCarRoute?.points ?? [];
+  const roadRoutePoints = routeSuppressedByProximity ? incomingRoadRoutePoints : lockedCarRoute?.points ?? [];
   const routeDistanceMeters =
-    lockedCarRoute?.distanceMeters ?? incomingRoadRoute?.distanceMeters ?? call?.tracking?.metrics?.crewToPickupMeters;
+    trackingMetrics?.effectiveDistanceMeters ??
+    lockedCarRoute?.distanceMeters ??
+    incomingRoadRoute?.distanceMeters ??
+    trackingMetrics?.crewToPickupMeters;
   const mapPath = routeMode === "car" ? roadRoutePoints : [];
   const hasRoadRoute = routeMode === "car" && roadRoutePoints.length > 1;
   const isRouteSearching = routeMode === "car" && !hasRoadRoute && Boolean(crewLocation && routeTarget);
   const canOpenWalkLink = routeMode === "walk" && Boolean(crewLocation && routeTarget);
 
   const statusText = pickupStatusLabel(status);
+  const precisionDistanceLabel = formatPrecisionDistance(trackingMetrics);
   const crewDistance =
-    lockedCarRoute?.distanceLabel ?? incomingRoadRoute?.distanceLabel ?? formatDistance(call?.tracking?.metrics?.crewToPickupMeters);
-  const durationLabel = lockedCarRoute?.durationLabel ?? incomingRoadRoute?.durationLabel ?? "-";
+    precisionDistanceLabel !== "-"
+      ? precisionDistanceLabel
+      : lockedCarRoute?.distanceLabel ?? incomingRoadRoute?.distanceLabel ?? formatDistance(trackingMetrics?.crewToPickupMeters);
+  const durationLabel =
+    trackingMetrics?.effectiveDurationSeconds != null
+      ? formatDurationSeconds(trackingMetrics.effectiveDurationSeconds)
+      : lockedCarRoute?.durationLabel ?? incomingRoadRoute?.durationLabel ?? "-";
   const calorieLabel = formatCalories(routeDistanceMeters);
   const walkMetric = [formatDistance(routeDistanceMeters), formatWalkDuration(routeDistanceMeters), calorieLabel]
     .filter((value) => value && value !== "-")
