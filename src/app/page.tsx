@@ -16,7 +16,6 @@ type CrewProfileSummary = {
   name: string;
   photoUrl: string | null;
   rating: number;
-  reviewSummary: string[];
 };
 
 const DEFAULT_CREW_NAME = "무함마드";
@@ -25,7 +24,6 @@ const DEFAULT_CREW_PROFILE: CrewProfileSummary = {
   name: DEFAULT_CREW_NAME,
   photoUrl: "/crew-muhammad.png",
   rating: 4.9,
-  reviewSummary: ["깔끔하고 신속하게 수거를 진행해요", "약속 시간을 잘 지키고 안내가 친절해요"],
 };
 
 export default function CrewHomePage() {
@@ -100,9 +98,6 @@ export default function CrewHomePage() {
                 <span className="mt-1 block text-[24px] font-bold leading-none text-ink">
                   {dispatchEnabled ? "수신 중" : "수신 중지"}
                 </span>
-                <span className="mt-3 block text-[12px] font-medium text-slate-500">
-                  {dispatchEnabled ? "새 수거 요청을 받을 수 있어요" : "요청 수신을 잠시 멈춘 상태예요"}
-                </span>
               </span>
 
               <button
@@ -153,21 +148,6 @@ export default function CrewHomePage() {
                   <Star className="fill-current" size={14} />
                   평점 {profile.rating.toFixed(1)}
                 </div>
-
-                <p className="mt-3 text-[13px] font-medium leading-5 text-slate-500">
-                  고객에게 노출되는 기본 정보와 최근 리뷰 요약을 여기서 바로 확인할 수 있어요.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-[18px] bg-cloud p-4">
-              <p className="text-[12px] font-bold text-slate-500">최근 리뷰 요약</p>
-              <div className="mt-3 space-y-2">
-                {profile.reviewSummary.map((summary, index) => (
-                  <p key={`${summary}-${index}`} className="text-[13px] font-semibold leading-6 text-ink">
-                    · {summary}
-                  </p>
-                ))}
               </div>
             </div>
           </section>
@@ -207,8 +187,6 @@ function resolveCrewProfile(calls: CrewCall[]): CrewProfileSummary {
         name: DEFAULT_CREW_NAME,
         photoUrl: DEFAULT_CREW_PROFILE.photoUrl,
         rating: call.crewProfile.rating || DEFAULT_CREW_PROFILE.rating,
-        reviewSummary:
-          call.crewProfile.reviewSummary?.filter((value) => value.trim().length > 0) || DEFAULT_CREW_PROFILE.reviewSummary,
       };
     }
   }

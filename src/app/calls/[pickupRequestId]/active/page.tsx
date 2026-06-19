@@ -90,11 +90,6 @@ function formatWalkDuration(distanceMeters?: number | null) {
   return `${minutes}분`;
 }
 
-function formatCalories(distanceMeters?: number | null) {
-  if (distanceMeters == null) return "-";
-  return `${Math.max(1, Math.round(distanceMeters * 0.044))}kcal`;
-}
-
 export default function CrewActiveCallPage() {
   const router = useRouter();
   const params = useParams<{ pickupRequestId: string }>();
@@ -268,7 +263,7 @@ export default function CrewActiveCallPage() {
             });
 
       setCall(updated);
-      setMessage(action === "depart" ? "수거지 출발 처리가 완료됐습니다." : "처리 완료가 반영됐습니다.");
+      setMessage(null);
     } catch {
       setMessage("진행 처리 중 문제가 발생했습니다.");
     } finally {
@@ -345,7 +340,6 @@ export default function CrewActiveCallPage() {
   const crewDistance =
     lockedCarRoute?.distanceLabel ?? incomingRoadRoute?.distanceLabel ?? formatDistance(call?.tracking?.metrics?.crewToPickupMeters);
   const durationLabel = lockedCarRoute?.durationLabel ?? incomingRoadRoute?.durationLabel ?? "-";
-  const calorieLabel = formatCalories(routeDistanceMeters);
   const hubAddress = call?.tracking?.processingCenter?.label ?? "처리 허브 정보가 없습니다.";
   const hubDistance = formatDistance(call?.tracking?.metrics?.crewToProcessingCenterMeters);
   const liveStatusBase = call?.tracking?.metrics?.locationLive ? "실시간 GPS 반영 중" : "위치 확인 중";
@@ -458,7 +452,6 @@ export default function CrewActiveCallPage() {
                   <InfoTile label="현재 상태" value={statusText} />
                   <InfoTile label="수거지까지" value={crewDistance} />
                   <InfoTile label="예상 시간" value={durationLabel} />
-                  <InfoTile label="예상 칼로리" value={calorieLabel} />
                   <InfoTile label="허브" value={`${hubAddress} · ${hubDistance}`} />
                 </div>
               </div>
@@ -471,7 +464,7 @@ export default function CrewActiveCallPage() {
             )}
           </section>
 
-          <section className="mt-4 rounded-[24px] bg-white p-4 shadow-sm">
+          <section className="mt-4 rounded-[22px] border border-slate-100 bg-white px-4 py-4 shadow-sm">
             <div className="flex items-center gap-2 text-sm font-black text-ink">
               <Truck size={16} className="text-lgred" />
               진행 처리
@@ -497,7 +490,7 @@ export default function CrewActiveCallPage() {
             </div>
           </section>
 
-          <section className="mt-4 rounded-[24px] bg-white p-4 shadow-sm">
+          <section className="mt-4 rounded-[22px] border border-slate-100 bg-white px-4 py-4 shadow-sm">
             <div className="text-sm font-black text-ink">현재 진행 안내</div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <InfoTile label="진행 상태" value={statusText} />
@@ -515,9 +508,6 @@ export default function CrewActiveCallPage() {
             목록으로 돌아가기
           </button>
 
-          {message ? (
-            <div className="mt-3 rounded-[16px] bg-cloud px-4 py-3 text-sm font-bold leading-6 text-slate-600">{message}</div>
-          ) : null}
         </div>
       </div>
     </CrewPhoneShell>
