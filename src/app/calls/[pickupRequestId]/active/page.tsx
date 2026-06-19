@@ -30,7 +30,7 @@ type LocationPayload = {
 };
 
 type PickupMapMarker = {
-  key: "pickup" | "crew" | "hub";
+  key: string;
   label?: string;
   position: Coordinate;
   title: string;
@@ -50,6 +50,10 @@ const DEFAULT_PICKUP_PHOTO = "crew-pickup-proof-demo.jpg";
 const DEFAULT_HUB_PHOTO = "crew-hub-proof-demo.jpg";
 const DEFAULT_PICKUP_MEMO = "문앞 도착 후 상태 확인 및 수거 완료";
 const DEFAULT_HUB_MEMO = "e-waste 허브 전달 및 처리 완료 등록";
+const FIXED_PROCESSING_CENTERS = [
+  { label: "LG사이언스파크 마곡", lat: 37.562475, lng: 126.831166 },
+  { label: "LG전자 창원 성산 허브", lat: 35.202531, lng: 128.677344 },
+] as const;
 
 function formatDateTime(value?: string | null) {
   if (!value) return "-";
@@ -88,6 +92,32 @@ function formatWalkDuration(distanceMeters?: number | null) {
   if (distanceMeters == null) return "-";
   const minutes = Math.max(1, Math.round(distanceMeters / 80));
   return `${minutes}분`;
+}
+
+function formatKoreanDisplayName(value?: string | null) {
+  if (!value) return "";
+
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized.includes(",")) {
+    return normalized;
+  }
+
+  const parts = normalized
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part && part !== "대한민국" && part !== "South Korea" && !/^\d{5}$/.test(part));
+
+  return parts.reverse().join(" ").replace(/\s+/g, " ").trim();
+}
+
+function formatKoreanDurationLabel(value?: string | null) {
+  if (!value || value === "-") return "-";
+  const normalized = value.trim();
+  const minuteMatch = normalized.match(/^(\d+)\s*mins?$/i);
+  if (minuteMatch) {
+    return `${minuteMatch[1]}분`;
+  }
+  return normalized.replace(/\bmins?\b/gi, "분");
 }
 
 export default function CrewActiveCallPage() {
@@ -282,7 +312,7 @@ export default function CrewActiveCallPage() {
     ? { lat: call.tracking.processingCenter.lat, lng: call.tracking.processingCenter.lng }
     : null;
 
-  const pickupAddress = call?.pickupRequest?.address ?? "수거지 주소 정보가 없습니다.";
+  const pickupAddress = formatKoreanDisplayName(call?.pickupRequest?.address) || "수거지 주소 정보가 없습니다.";
   const routeTarget = status === "ARRIVED" || status === "COMPLETED" ? hubLocation ?? pickupLocation : pickupLocation;
   const mapCenter = selectedMapCenter ?? crewLocation ?? pickupLocation ?? hubLocation;
   const mapZoom = selectedMapZoom ?? 17;
@@ -293,9 +323,13 @@ export default function CrewActiveCallPage() {
     ...(crewLocation
       ? [{ key: "crew" as const, label: "C", position: crewLocation, title: "크루 현재 위치", variant: "crew" as const }]
       : []),
-    ...(hubLocation
-      ? [{ key: "hub" as const, label: "H", position: hubLocation, title: "처리 허브", variant: "hub" as const }]
-      : []),
+    ...FIXED_PROCESSING_CENTERS.map((center, index) => ({
+      key: `hub-${index}`,
+      label: "H",
+      position: { lat: center.lat, lng: center.lng },
+      title: center.label,
+      variant: "hub" as const,
+    })),
   ];
 
   const incomingRoadRoute = call?.tracking?.route;
@@ -334,13 +368,14 @@ export default function CrewActiveCallPage() {
   const routeDistanceMeters =
     lockedCarRoute?.distanceMeters ?? incomingRoadRoute?.distanceMeters ?? call?.tracking?.metrics?.crewToPickupMeters;
   const mapPath = roadRoutePoints;
+  const boundsPoints = mapPath.length > 1 ? mapPath : [crewLocation, routeTarget].filter(Boolean) as Coordinate[];
   const hasRoadRoute = roadRoutePoints.length > 1;
 
   const statusText = pickupStatusLabel(status);
   const crewDistance =
     lockedCarRoute?.distanceLabel ?? incomingRoadRoute?.distanceLabel ?? formatDistance(call?.tracking?.metrics?.crewToPickupMeters);
-  const durationLabel = lockedCarRoute?.durationLabel ?? incomingRoadRoute?.durationLabel ?? "-";
-  const hubAddress = call?.tracking?.processingCenter?.label ?? "처리 허브 정보가 없습니다.";
+  const durationLabel = formatKoreanDurationLabel(lockedCarRoute?.durationLabel ?? incomingRoadRoute?.durationLabel);
+  const hubAddress = formatKoreanDisplayName(call?.tracking?.processingCenter?.label) || "처리 허브 정보가 없습니다.";
   const hubDistance = formatDistance(call?.tracking?.metrics?.crewToProcessingCenterMeters);
   const liveStatusBase = call?.tracking?.metrics?.locationLive ? "실시간 GPS 반영 중" : "위치 확인 중";
   const liveStatusMetrics = [crewDistance, durationLabel].filter((value) => value && value !== "-").join(" · ");
@@ -395,6 +430,7 @@ export default function CrewActiveCallPage() {
                   <div className="relative isolate overflow-hidden">
                     <KakaoCanvasMap
                       appKey={kakaoMapAppKey}
+                      boundsPoints={boundsPoints}
                       center={mapCenter}
                       className="relative z-0 h-[430px] w-full"
                       fitBounds

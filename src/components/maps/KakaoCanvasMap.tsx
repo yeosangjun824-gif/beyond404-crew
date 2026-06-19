@@ -19,6 +19,7 @@ type KakaoCanvasMapProps = {
   appKey: string;
   center: Coordinate;
   markers: MapMarker[];
+  boundsPoints?: Coordinate[];
   path?: Coordinate[];
   className?: string;
   fitBounds?: boolean;
@@ -135,10 +136,17 @@ function createMarkerNode(marker: MapMarker, onClick?: (marker: MapMarker) => vo
   return button;
 }
 
+function boundsKey(points: Coordinate[]) {
+  return points
+    .map((point) => `${point.lat.toFixed(4)},${point.lng.toFixed(4)}`)
+    .join("|");
+}
+
 export function KakaoCanvasMap({
   appKey,
   center,
   className,
+  boundsPoints = [],
   fitBounds = false,
   level,
   markers,
@@ -158,10 +166,14 @@ export function KakaoCanvasMap({
   const mapRef = useRef<any>(null);
   const markerRefs = useRef<any[]>([]);
   const polylineRef = useRef<any>(null);
-  const autoFitDoneRef = useRef(false);
+  const lastFitBoundsKeyRef = useRef("");
   const [loadError, setLoadError] = useState("");
 
   const stableMarkers = useMemo(() => markers, [markers]);
+  const stableBoundsPoints = useMemo(
+    () => boundsPoints.filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)),
+    [boundsPoints],
+  );
   const stablePath = useMemo(() => path.filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)), [path]);
   const kakaoLevel = zoomToLevel(zoom, level);
 
@@ -233,19 +245,34 @@ export function KakaoCanvasMap({
       polylineRef.current.setMap(map);
     }
 
-    if (fitBounds && !autoFitDoneRef.current) {
-      const points = [...stableMarkers.map((marker) => marker.position), ...stablePath];
-      if (points.length > 1) {
+    if (fitBounds) {
+      const points =
+        stableBoundsPoints.length > 1 ? stableBoundsPoints : [...stableMarkers.map((marker) => marker.position), ...stablePath];
+      const nextBoundsKey = boundsKey(points);
+      if (points.length > 1 && nextBoundsKey && nextBoundsKey !== lastFitBoundsKeyRef.current) {
         const bounds = new kakao.maps.LatLngBounds();
         points.forEach((point) => bounds.extend(new kakao.maps.LatLng(point.lat, point.lng)));
         map.setBounds(bounds, 40, 40, 40, 40);
-        autoFitDoneRef.current = true;
+        lastFitBoundsKeyRef.current = nextBoundsKey;
       }
     } else if (syncCenter) {
       map.setCenter(new kakao.maps.LatLng(center.lat, center.lng));
       map.setLevel(kakaoLevel);
     }
-  }, [center.lat, center.lng, fitBounds, kakaoLevel, onMarkerClick, routeColor, routeOpacity, routeWeight, stableMarkers, stablePath, syncCenter]);
+  }, [
+    center.lat,
+    center.lng,
+    fitBounds,
+    kakaoLevel,
+    onMarkerClick,
+    routeColor,
+    routeOpacity,
+    routeWeight,
+    stableBoundsPoints,
+    stableMarkers,
+    stablePath,
+    syncCenter,
+  ]);
 
   if (loadError) {
     return (
