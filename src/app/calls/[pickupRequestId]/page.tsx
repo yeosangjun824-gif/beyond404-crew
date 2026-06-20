@@ -203,7 +203,7 @@ export default function CrewCallDetailPage() {
           </Link>
         </div>
       </div>
-    </CrewPhoneShell>
+      </CrewPhoneShell>
   );
 }
 

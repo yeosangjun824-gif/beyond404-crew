@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AppEntryHomeRedirect } from "@/components/FreshEntryHomeRedirect";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <AppEntryHomeRedirect />
+        {children}
+      </body>
     </html>
   );
 }

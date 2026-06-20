@@ -113,11 +113,23 @@ function formatKoreanDisplayName(value?: string | null) {
 function formatKoreanDurationLabel(value?: string | null) {
   if (!value || value === "-") return "-";
   const normalized = value.trim();
+  const hourMinuteMatch = normalized.match(/^(\d+)\s*h(?:ou)?rs?\s*(\d+)?\s*mins?$/i);
+  if (hourMinuteMatch) {
+    const hours = Number(hourMinuteMatch[1]);
+    const minutes = Number(hourMinuteMatch[2] ?? 0);
+    return `${hours}시간${minutes > 0 ? ` ${minutes}분` : ""}`;
+  }
+
+  const hourMatch = normalized.match(/^(\d+)\s*h(?:ou)?rs?$/i);
+  if (hourMatch) {
+    return `${hourMatch[1]}시간`;
+  }
+
   const minuteMatch = normalized.match(/^(\d+)\s*mins?$/i);
   if (minuteMatch) {
     return `${minuteMatch[1]}분`;
   }
-  return normalized.replace(/\bmins?\b/gi, "분");
+  return normalized.replace(/\bh(?:ou)?rs?\b/gi, "시간").replace(/\bmins?\b/gi, "분");
 }
 
 export default function CrewActiveCallPage() {
@@ -539,7 +551,7 @@ export default function CrewActiveCallPage() {
 
         </div>
       </div>
-    </CrewPhoneShell>
+      </CrewPhoneShell>
   );
 }
 
