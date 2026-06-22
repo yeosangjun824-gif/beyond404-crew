@@ -192,8 +192,21 @@ export function fetchCrewLocationHistory(pickupRequestId: number) {
   >(`/api/crew/pickups/${pickupRequestId}/location-history`);
 }
 
-export function acceptCrewCall(pickupRequestId: number) {
-  return crewRequest<CrewCall>(`/api/crew/calls/${pickupRequestId}/accept`, { method: "POST" });
+export function acceptCrewCall(
+  pickupRequestId: number,
+  payload?: {
+    lat: number;
+    lng: number;
+    heading?: number;
+    speed?: number;
+    accuracy?: number;
+    capturedAt?: number;
+  },
+) {
+  return crewRequest<CrewCall>(`/api/crew/calls/${pickupRequestId}/accept`, {
+    method: "POST",
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
 }
 
 export function departCrewCall(pickupRequestId: number) {
@@ -226,6 +239,8 @@ export function updateCrewLocation(
     lng: number;
     heading?: number;
     speed?: number;
+    accuracy?: number;
+    capturedAt?: number;
   },
 ) {
   return crewRequest<CrewCall>(`/api/crew/pickups/${pickupRequestId}/location`, {
@@ -235,7 +250,17 @@ export function updateCrewLocation(
       lng: payload.lng,
       heading: payload.heading ?? 0,
       speed: payload.speed ?? 0,
+      accuracy: payload.accuracy,
+      capturedAt: payload.capturedAt,
     }),
+  });
+}
+
+export function sortCallsByLatest(calls: CrewCall[]) {
+  return [...calls].sort((left, right) => {
+    const rightId = right.pickupRequest?.pickupRequestId ?? right.id;
+    const leftId = left.pickupRequest?.pickupRequestId ?? left.id;
+    return rightId - leftId;
   });
 }
 
@@ -264,13 +289,16 @@ export function formatRequestTime(requestedAt?: string | null, scheduledAt?: str
   const parsed = new Date(source);
   if (Number.isNaN(parsed.getTime())) return source;
 
-  return new Intl.DateTimeFormat("ko-KR", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(parsed);
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const hour = String(parsed.getHours()).padStart(2, "0");
+  const minute = String(parsed.getMinutes()).padStart(2, "0");
+
+  return `${month}.${day} ${hour}:${minute}`;
+}
+
+export function formatCallTime(call: CrewCall) {
+  return formatRequestTime(call.pickupRequest?.requestedAt, call.pickupRequest?.scheduledAt);
 }
 
 export function pickupTypeLabel(value?: string | null) {
@@ -294,11 +322,11 @@ export function statusLabel(status?: string | null) {
     case "ASSIGNED":
       return "수락 완료";
     case "IN_PROGRESS":
-      return "수거지 이동 중";
+      return "이동 중";
     case "ARRIVED":
       return "문앞 도착";
     case "COMPLETED":
-      return "허브 완료";
+      return "처리 완료";
     default:
       return status ?? "-";
   }

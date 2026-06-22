@@ -29,19 +29,23 @@ const navItems = [
     label: "완료",
     match: (pathname: string) => pathname === "/completed",
   },
-];
+] as const;
 
 export function CrewBottomNav() {
   const pathname = usePathname();
 
   return (
-    <div className="shrink-0 px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3 md:px-5 md:pb-5">
-      <nav className="mx-auto grid w-full max-w-[392px] grid-cols-4 rounded-[26px] border border-white/80 bg-white/95 px-3 py-3 shadow-[0_14px_30px_rgba(15,23,42,0.10)] backdrop-blur">
-        {navItems.map((item) => (
-          <NavItem key={item.href} active={item.match(pathname)} href={item.href} icon={item.icon} label={item.label} />
-        ))}
-      </nav>
-    </div>
+    <nav className="-mx-4 grid h-[76px] shrink-0 grid-cols-4 bg-white px-2 pb-[max(8px,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_20px_rgba(15,23,42,0.06)]">
+      {navItems.map((item) => (
+        <NavItem
+          key={item.href}
+          active={item.match(pathname)}
+          href={item.href}
+          icon={item.icon}
+          label={item.label}
+        />
+      ))}
+    </nav>
   );
 }
 
@@ -58,13 +62,11 @@ function NavItem({
 }) {
   return (
     <Link
-      className={`mx-auto flex min-w-[70px] flex-col items-center gap-1 rounded-[14px] px-3 py-2 text-[11px] font-bold transition ${
-        active ? "bg-lgred/10 text-lgred" : "text-slate-400"
-      }`}
+      className={`flex flex-col items-center justify-center gap-1 ${active ? "text-lgred" : "text-slate-500"}`}
       href={href}
     >
-      <Icon size={18} />
-      <span>{label}</span>
+      <Icon size={20} strokeWidth={2.2} />
+      <span className="text-[10px] font-semibold">{label}</span>
     </Link>
   );
 }
