@@ -100,6 +100,11 @@ export type CrewCall = {
       }[];
       calculatedAt?: string | null;
     } | null;
+    events?: {
+      eventType: string;
+      message: string;
+      createdAt: string;
+    }[];
     locationHistory?: {
       lat: number;
       lng: number;
