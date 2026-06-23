@@ -17,6 +17,8 @@ export type CrewCall = {
     applianceType: string;
     brand: string;
     modelName?: string | null;
+    sizeGrade?: string | null;
+    sizeMetric?: string | null;
   } | null;
   userConsent?: {
     agreedToCreditPolicy: boolean;
@@ -152,7 +154,7 @@ function resolveApiBaseUrl() {
     return trimTrailingSlash(publicBaseUrl);
   }
 
-  return "http://127.0.0.1:8081";
+  return "http://127.0.0.1:8080";
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -277,6 +279,129 @@ export function sortCallsByLatest(calls: CrewCall[]) {
     const leftId = left.pickupRequest?.pickupRequestId ?? left.id;
     return rightId - leftId;
   });
+}
+
+export type CrewSettlementBreakdown = {
+  baseAcceptFee: number;
+  pickupWorkFee: number;
+  pickupWorkFeeLabel: string;
+  pickupDistanceFee: number;
+  hubDistanceFee: number;
+  longDistanceSurcharge: number;
+  minimumAdjustment: number;
+  totalAmount: number;
+  pickupDistanceMeters: number | null;
+  hubDistanceMeters: number | null;
+  totalDistanceMeters: number | null;
+};
+
+const CREW_SETTLEMENT_POLICY = {
+  baseAcceptFee: 2000,
+  defaultPickupWorkFee: 8000,
+  pickupDistanceRatePerKm: 800,
+  hubDistanceRatePerKm: 500,
+  longDistanceThresholdMeters: 10000,
+  longDistanceSurcharge: 2000,
+  minimumPayout: 6000,
+} as const;
+
+export function calculateCrewSettlement(call: CrewCall): CrewSettlementBreakdown {
+  const pickupDistanceMeters = getCrewToPickupMeters(call);
+  const hubDistanceMeters = getPickupToHubMeters(call);
+  const totalDistanceMeters =
+    pickupDistanceMeters == null && hubDistanceMeters == null
+      ? null
+      : (pickupDistanceMeters ?? 0) + (hubDistanceMeters ?? 0);
+
+  const pickupDistanceFee = calculateDistanceFee(pickupDistanceMeters, CREW_SETTLEMENT_POLICY.pickupDistanceRatePerKm);
+  const hubDistanceFee = calculateDistanceFee(hubDistanceMeters, CREW_SETTLEMENT_POLICY.hubDistanceRatePerKm);
+  const pickupWorkFee = getPickupWorkFee(call);
+  const longDistanceSurcharge =
+    totalDistanceMeters != null && totalDistanceMeters > CREW_SETTLEMENT_POLICY.longDistanceThresholdMeters
+      ? CREW_SETTLEMENT_POLICY.longDistanceSurcharge
+      : 0;
+
+  const subtotal =
+    CREW_SETTLEMENT_POLICY.baseAcceptFee +
+    pickupWorkFee.amount +
+    pickupDistanceFee +
+    hubDistanceFee +
+    longDistanceSurcharge;
+  const minimumAdjustment = Math.max(0, CREW_SETTLEMENT_POLICY.minimumPayout - subtotal);
+
+  return {
+    baseAcceptFee: CREW_SETTLEMENT_POLICY.baseAcceptFee,
+    pickupWorkFee: pickupWorkFee.amount,
+    pickupWorkFeeLabel: pickupWorkFee.label,
+    pickupDistanceFee,
+    hubDistanceFee,
+    longDistanceSurcharge,
+    minimumAdjustment,
+    totalAmount: subtotal + minimumAdjustment,
+    pickupDistanceMeters,
+    hubDistanceMeters,
+    totalDistanceMeters,
+  };
+}
+
+export function formatKrwAmount(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return "확인 중";
+  return `${Math.round(value).toLocaleString("ko-KR")}원`;
+}
+
+function calculateDistanceFee(distanceMeters: number | null, ratePerKm: number) {
+  if (distanceMeters == null || distanceMeters <= 0) return 0;
+  return Math.round((distanceMeters / 1000) * ratePerKm);
+}
+
+function getPickupWorkFee(call: CrewCall) {
+  const grade = call.appliance?.sizeGrade?.trim();
+  if (grade?.includes("소형")) return { amount: 5000, label: "소형 가전 작업비" };
+  if (grade?.includes("중형")) return { amount: 8000, label: "중형 가전 작업비" };
+  if (grade?.includes("대형")) return { amount: 12000, label: "대형 가전 작업비" };
+
+  return {
+    amount: CREW_SETTLEMENT_POLICY.defaultPickupWorkFee,
+    label: "기본 작업비",
+  };
+}
+
+function getCrewToPickupMeters(call: CrewCall) {
+  const assignedCrew = call.pickupRequest?.nearbyCrews?.find((crew) => crew.assigned);
+  const nearestCrew = call.pickupRequest?.nearbyCrews?.[0];
+
+  return (
+    call.tracking?.metrics?.crewToPickupMeters ??
+    call.tracking?.route?.distanceMeters ??
+    assignedCrew?.distanceMeters ??
+    nearestCrew?.distanceMeters ??
+    null
+  );
+}
+
+function getPickupToHubMeters(call: CrewCall) {
+  const pickupLat = call.booking?.pickupLat;
+  const pickupLng = call.booking?.pickupLng;
+  const hub = call.tracking?.processingCenter;
+
+  if (pickupLat != null && pickupLng != null && hub?.lat != null && hub?.lng != null) {
+    return distanceBetweenMeters({ lat: pickupLat, lng: pickupLng }, { lat: hub.lat, lng: hub.lng });
+  }
+
+  return call.tracking?.metrics?.crewToProcessingCenterMeters ?? null;
+}
+
+function distanceBetweenMeters(left: { lat: number; lng: number }, right: { lat: number; lng: number }) {
+  const earthRadiusMeters = 6371000;
+  const leftLat = (left.lat * Math.PI) / 180;
+  const rightLat = (right.lat * Math.PI) / 180;
+  const deltaLat = ((right.lat - left.lat) * Math.PI) / 180;
+  const deltaLng = ((right.lng - left.lng) * Math.PI) / 180;
+  const halfChord =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(leftLat) * Math.cos(rightLat) * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
+
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(halfChord), Math.sqrt(1 - halfChord));
 }
 
 export function applianceName(call: CrewCall) {

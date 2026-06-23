@@ -4,8 +4,11 @@ import { CrewPhoneShell } from "@/components/CrewPhoneShell";
 import {
   acceptCrewCall,
   applianceName,
+  calculateCrewSettlement,
   fetchActiveCrewCalls,
   fetchCrewCallDetail,
+  formatDistance,
+  formatKrwAmount,
   formatRequestTime,
   pickupTypeLabel,
   type CrewCall,
@@ -139,6 +142,7 @@ export default function CrewCallDetailPage() {
       setLoading(false);
     }
   };
+  const settlement = call ? calculateCrewSettlement(call) : null;
 
   return (
     <CrewPhoneShell>
@@ -189,6 +193,38 @@ export default function CrewCallDetailPage() {
             <SimpleRow label="현재 상태" value={statusLabel(status)} />
             <SimpleRow label="처리 허브" value={call?.tracking?.processingCenter?.label ?? "허브 정보가 없습니다."} />
           </section>
+
+          {settlement ? (
+            <section className="mt-4 rounded-[22px] border border-lgred/10 bg-white px-4 py-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[12px] font-black text-lgred">예상 정산</p>
+                  <h2 className="mt-1 text-[24px] font-black leading-none text-ink">
+                    {formatKrwAmount(settlement.totalAmount)}
+                  </h2>
+                </div>
+                <span className="rounded-full bg-lgred/10 px-3 py-1 text-[11px] font-bold text-lgred">최소 6,000원 보장</span>
+              </div>
+              <div className="mt-4 space-y-2">
+                <SimpleRow label="콜 수락 기본금" value={formatKrwAmount(settlement.baseAcceptFee)} />
+                <SimpleRow label={settlement.pickupWorkFeeLabel} value={formatKrwAmount(settlement.pickupWorkFee)} />
+                <SimpleRow
+                  label={`크루 → 수거지 ${formatDistance(settlement.pickupDistanceMeters)}`}
+                  value={formatKrwAmount(settlement.pickupDistanceFee)}
+                />
+                <SimpleRow
+                  label={`수거지 → 허브 ${formatDistance(settlement.hubDistanceMeters)}`}
+                  value={formatKrwAmount(settlement.hubDistanceFee)}
+                />
+                {settlement.longDistanceSurcharge > 0 ? (
+                  <SimpleRow label="장거리 추가 정산" value={formatKrwAmount(settlement.longDistanceSurcharge)} />
+                ) : null}
+                {settlement.minimumAdjustment > 0 ? (
+                  <SimpleRow label="최소 정산 보정" value={formatKrwAmount(settlement.minimumAdjustment)} />
+                ) : null}
+              </div>
+            </section>
+          ) : null}
 
           {loadFailed ? (
             <div className="mt-4 rounded-[18px] bg-red-50 px-4 py-4 text-sm font-semibold leading-6 text-red-700">

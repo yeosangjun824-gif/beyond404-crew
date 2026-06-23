@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronRight, Clock3, MapPin, PackageCheck, Star, Truck, UserRound } from "lucide-react";
 import { CrewPhoneShell } from "@/components/CrewPhoneShell";
 import { CrewTopBar } from "@/components/CrewTopBar";
 import {
   acceptCrewCall,
   applianceName,
+  calculateCrewSettlement,
   fetchActiveCrewCalls,
   fetchCompletedCrewCalls,
   fetchPendingCrewCalls,
   formatCallTime,
   formatDistance,
+  formatKrwAmount,
   pickupTypeLabel,
   sortCallsByLatest,
   statusLabel,
@@ -57,9 +59,11 @@ export default function CrewHomePage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const touchStartYRef = useRef<number | null>(null);
 
-  const loadSummary = async () => {
-    setLoading(true);
-    setErrorMessage(null);
+  const loadSummary = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) {
+      setLoading(true);
+      setErrorMessage(null);
+    }
 
     const [pendingResult, activeResult, completedResult] = await Promise.allSettled([
       fetchPendingCrewCalls(),
@@ -80,18 +84,30 @@ export default function CrewHomePage() {
     }
 
     const failedCount = [pendingResult, activeResult, completedResult].filter((result) => result.status === "rejected").length;
-    if (failedCount === 3) {
-      setErrorMessage("수거 요청을 불러오지 못했어요. 백엔드 연결 상태를 확인해 주세요.");
-    } else if (failedCount > 0) {
-      setErrorMessage("일부 요청 정보가 늦게 들어오고 있어요. 아래로 당기면 다시 확인할 수 있어요.");
+    if (!silent) {
+      if (failedCount === 3) {
+        setErrorMessage("수거 요청을 불러오지 못했어요. 백엔드 연결 상태를 확인해 주세요.");
+      } else if (failedCount > 0) {
+        setErrorMessage("일부 요청 정보가 늦게 들어오고 있어요. 아래로 당기면 다시 확인할 수 있어요.");
+      }
     }
 
-    setLoading(false);
-  };
+    if (!silent) {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void loadSummary();
-  }, []);
+  }, [loadSummary]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void loadSummary({ silent: true });
+    }, 8000);
+
+    return () => window.clearInterval(timer);
+  }, [loadSummary]);
 
   const profile = useMemo(
     () => resolveCrewProfile([...activeCalls, ...pendingCalls, ...completedCalls]),
@@ -352,7 +368,8 @@ function ActiveCallCard({ call }: { call: CrewCall }) {
       <div className="mt-4 grid grid-cols-2 gap-2">
         <InfoTile label="예상 정산" value={getPayoutLabel(call)} highlight />
         <InfoTile label="예상 이동" value={getDurationLabel(call)} />
-        <InfoTile label="남은 거리" value={getDistanceLabel(call)} />
+        <InfoTile label="총 이동" value={getTotalDistanceLabel(call)} />
+        <InfoTile label="수거 + 허브" value={getLegDistanceLabel(call)} />
       </div>
 
       <Link
@@ -400,6 +417,7 @@ function PriorityPendingCard({
         <InfoTile label="현재 거리" value={getDistanceLabel(call)} />
         <InfoTile label="요청 시간" value={formatCallTime(call)} />
         <InfoTile label="예약 방식" value={pickupTypeLabel(call.pickupRequest?.pickupType)} />
+        <InfoTile label="수거 + 허브" value={getLegDistanceLabel(call)} />
       </div>
 
       {call.selectedProduct ? (
@@ -555,6 +573,15 @@ function getDistanceLabel(call: CrewCall) {
   return call.tracking?.route?.distanceLabel ?? formatDistance(getDistanceMeters(call));
 }
 
+function getLegDistanceLabel(call: CrewCall) {
+  const settlement = calculateCrewSettlement(call);
+  return `수거 ${formatDistance(settlement.pickupDistanceMeters)} · 허브 ${formatDistance(settlement.hubDistanceMeters)}`;
+}
+
+function getTotalDistanceLabel(call: CrewCall) {
+  return formatDistance(calculateCrewSettlement(call).totalDistanceMeters);
+}
+
 function getDurationLabel(call: CrewCall) {
   if (call.tracking?.route?.durationLabel) {
     return call.tracking.route.durationLabel;
@@ -570,7 +597,7 @@ function getDurationLabel(call: CrewCall) {
 }
 
 function getPayoutLabel(call: CrewCall) {
-  return call.settlement?.totalAmount == null ? "확인 중" : formatWon(call.settlement.totalAmount);
+  return formatKrwAmount(calculateCrewSettlement(call).totalAmount);
 }
 
 function formatWon(value: number | null | undefined) {

@@ -5,11 +5,14 @@ import { KakaoCanvasMap } from "@/components/maps/KakaoCanvasMap";
 import {
   applianceName,
   arriveCrewCall,
+  calculateCrewSettlement,
   completeCrewCall,
   fetchCrewCallDetail,
   fetchCompletedCrewCalls,
   formatDistance,
+  formatKrwAmount,
   updateCrewLocation,
+  type CrewSettlementBreakdown,
   type CrewCall,
 } from "@/lib/crew-api";
 import { ArrowLeft, Check, Navigation, X } from "lucide-react";
@@ -48,6 +51,7 @@ type LockedRoute = {
 
 type CompletionSummary = {
   earnedAmount: number;
+  settlement: CrewSettlementBreakdown;
   todayCount: number;
   todayEarnings: number;
 };
@@ -330,16 +334,20 @@ export default function CrewActiveCallPage() {
         const completedCalls = await fetchCompletedCrewCalls();
         const nextCompletedCalls = upsertCompletedCall(completedCalls, updated);
         const todayCalls = nextCompletedCalls.filter(isCompletedToday);
+        const settlement = calculateCrewSettlement(updated);
         setCompletionSummary({
-          earnedAmount: getSettlementAmount(updated),
+          earnedAmount: settlement.totalAmount,
+          settlement,
           todayCount: todayCalls.length,
           todayEarnings: todayCalls.reduce((sum, completedCall) => sum + getSettlementAmount(completedCall), 0),
         });
       } catch {
+        const settlement = calculateCrewSettlement(updated);
         setCompletionSummary({
-          earnedAmount: getSettlementAmount(updated),
+          earnedAmount: settlement.totalAmount,
+          settlement,
           todayCount: 1,
-          todayEarnings: getSettlementAmount(updated),
+          todayEarnings: settlement.totalAmount,
         });
       }
     } catch {
@@ -423,6 +431,7 @@ export default function CrewActiveCallPage() {
   const crewDistance =
     lockedCarRoute?.distanceLabel ?? incomingRoadRoute?.distanceLabel ?? formatDistance(call?.tracking?.metrics?.crewToPickupMeters);
   const durationLabel = formatKoreanDurationLabel(lockedCarRoute?.durationLabel ?? incomingRoadRoute?.durationLabel);
+  const settlement = call ? calculateCrewSettlement(call) : null;
   const hubAddress = formatKoreanDisplayName(call?.tracking?.processingCenter?.label) || "처리 허브 정보가 없습니다.";
   const hubDistance = formatDistance(call?.tracking?.metrics?.crewToProcessingCenterMeters);
   const liveStatusBase = call?.tracking?.metrics?.locationLive ? "실시간 GPS 반영 중" : "위치 확인 중";
@@ -539,6 +548,12 @@ export default function CrewActiveCallPage() {
               <div className="mt-4 grid grid-cols-1 gap-3">
                 <InfoTile label="수거지 주소" value={pickupAddress} />
                 <InfoTile label="실시간 상태" value={liveStatus} />
+                {canCompleteHubProcessing && settlement ? (
+                  <InfoTile
+                    label="허브 이동 정산"
+                    value={`${formatKrwAmount(settlement.hubDistanceFee)} · ${formatDistance(settlement.hubDistanceMeters)}`}
+                  />
+                ) : null}
                 <InfoTile label="위치 갱신 시각" value={formatDateTime(call?.tracking?.driverLocation?.updatedAt)} />
               </div>
             )}
@@ -623,12 +638,34 @@ function CompletionDialog({
 
         <div className="mt-5 rounded-[20px] bg-lgred px-4 py-5 text-white">
           <p className="text-[12px] font-bold opacity-80">이번 수거 정산</p>
-          <p className="mt-1 text-[30px] font-black leading-none">{formatWon(summary.earnedAmount)}</p>
+          <p className="mt-1 text-[30px] font-black leading-none">{formatKrwAmount(summary.earnedAmount)}</p>
+          <p className="mt-2 text-[12px] font-semibold opacity-80">
+            총 이동 {formatDistance(summary.settlement.totalDistanceMeters)} 기준
+          </p>
+        </div>
+
+        <div className="mt-3 rounded-[18px] bg-cloud px-4 py-3">
+          <SettlementRow label="콜 수락 기본금" value={formatKrwAmount(summary.settlement.baseAcceptFee)} />
+          <SettlementRow label={summary.settlement.pickupWorkFeeLabel} value={formatKrwAmount(summary.settlement.pickupWorkFee)} />
+          <SettlementRow
+            label={`수거지 이동 ${formatDistance(summary.settlement.pickupDistanceMeters)}`}
+            value={formatKrwAmount(summary.settlement.pickupDistanceFee)}
+          />
+          <SettlementRow
+            label={`허브 이동 ${formatDistance(summary.settlement.hubDistanceMeters)}`}
+            value={formatKrwAmount(summary.settlement.hubDistanceFee)}
+          />
+          {summary.settlement.longDistanceSurcharge > 0 ? (
+            <SettlementRow label="장거리 추가" value={formatKrwAmount(summary.settlement.longDistanceSurcharge)} />
+          ) : null}
+          {summary.settlement.minimumAdjustment > 0 ? (
+            <SettlementRow label="최소 정산 보정" value={formatKrwAmount(summary.settlement.minimumAdjustment)} />
+          ) : null}
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3">
-          <SummaryTile label="오늘 처리" value={`${summary.todayCount}건째`} />
-          <SummaryTile label="오늘 수익" value={formatWon(summary.todayEarnings)} />
+          <SummaryTile label="오늘 처리" value={`${summary.todayCount}건`} />
+          <SummaryTile label="오늘 수익" value={formatKrwAmount(summary.todayEarnings)} />
         </div>
 
         <button
@@ -652,6 +689,15 @@ function SummaryTile({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SettlementRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-white py-2 last:border-b-0">
+      <p className="text-[12px] font-bold text-slate-500">{label}</p>
+      <p className="shrink-0 text-[12px] font-black text-ink">{value}</p>
+    </div>
+  );
+}
+
 function upsertCompletedCall(calls: CrewCall[], completedCall: CrewCall) {
   const completedId = completedCall.pickupRequest?.pickupRequestId ?? completedCall.id;
   const exists = calls.some((call) => (call.pickupRequest?.pickupRequestId ?? call.id) === completedId);
@@ -659,7 +705,7 @@ function upsertCompletedCall(calls: CrewCall[], completedCall: CrewCall) {
 }
 
 function getSettlementAmount(call: CrewCall) {
-  return call.settlement?.totalAmount ?? 0;
+  return calculateCrewSettlement(call).totalAmount;
 }
 
 function isCompletedToday(call: CrewCall) {
